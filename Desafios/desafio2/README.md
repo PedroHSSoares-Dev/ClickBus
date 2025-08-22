@@ -4,7 +4,7 @@
 - **Entregáveis**:  
   - Apresentação executiva  
   - Material de backup  
-  - Modelos LightGBM e XGBoost treinados  
-  - Pipeline de pré-processamento e AutoML (Optuna/FLAML)  
+  - Modelos XGBoost treinados  
+  - Pipeline de pré-processamento e AutoML (Optuna)  
   - API REST para predições (Flask + Docker)  
-  - Arquivo CSV com predições para 50.000 clientes
+  - Arquivo CSV com predições para todos os clientes
