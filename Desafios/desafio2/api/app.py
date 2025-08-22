@@ -8,8 +8,9 @@ app = flask.Flask(__name__)
 
 # --- Carregamento dos Modelos ---
 print("Carregando modelos...")
-model_clf = joblib.load('../modelos/xgboost_classificador_final.joblib')
-model_reg = joblib.load('../modelos/xgboost_regressor_final.joblib')
+# Dentro do container, a pasta 'modelos' estará ao lado do app.py
+model_clf = joblib.load('./modelos/xgboost_classificador_final.joblib')
+model_reg = joblib.load('./modelos/xgboost_regressor_final.joblib')
 print("Modelos carregados com sucesso.")
 
 # --- Listas de Features (ORDEM CORRIGIDA E SINCRONIZADA) ---
