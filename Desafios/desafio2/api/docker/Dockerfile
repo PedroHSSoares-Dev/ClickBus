@@ -1,26 +1,27 @@
-# 1. Imagem Base Segura
+# 1. Usar uma imagem base oficial do Python
 FROM python:3.11.5-slim-bookworm
 
-# 2. Atualizações de Segurança
+# 2. Atualizar pacotes do sistema
 RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
-# 3. Diretório de Trabalho
+# 3. Definir o diretório de trabalho dentro do container
 WORKDIR /app
 
-# 4. Copiar Arquivos de Dependências
-COPY Desafios/desafio2/api/requirements.txt .
+# 4. Copiar o arquivo de dependências
+# CORREÇÃO: O caminho agora é relativo à pasta 'api'
+COPY requirements.txt .
 
-# 5. Instalar Dependências
+# 5. Instalar as dependências
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 6. Copiar os Modelos e o Código da Aplicação
-# CORREÇÃO: Aponta para o caminho exato da sua pasta de modelos
-COPY Desafios/desafio2/api/modelos/ ./modelos/
-# CORREÇÃO: Copia todos os arquivos .py da pasta api
-COPY Desafios/desafio2/api/*.py ./
+# 6. Copiar os Modelos, Dados e o Código da Aplicação
+# CORREÇÃO: Os caminhos agora são relativos à pasta 'api'
+COPY ./modelos/ ./modelos/
+COPY ./data/ ./data/
+COPY app.py .
 
-# 7. Expor a Porta
+# 7. Expor a porta que a aplicação vai usar
 EXPOSE 5000
 
-# 8. Comando de Execução
-CMD ["python", "-u", "app.py"]
+# 8. Comando para rodar a aplicação quando o container iniciar
+CMD ["python", "app.py"]
