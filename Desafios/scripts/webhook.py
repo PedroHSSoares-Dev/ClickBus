@@ -5,12 +5,27 @@ import json
 from datetime import datetime
 from dotenv import load_dotenv
 
-load_dotenv()
-caminho = os.getenv('URL_WEBHOOK')
+try:
+    notebook_path = os.path.dirname(__file__) # Para scripts .py
+except NameError:
+    notebook_path = os.getcwd() # Para notebooks .ipynb
 
-CAMINHO_CSV = os.getenv('WEBHOOK_PATH')
-ARQUIVO_CSV_ATUAL = f'{CAMINHO_CSV}cluster.csv'
-ARQUIVO_JSON_ANTIGO = f'{CAMINHO_CSV}cluster_antigo.json'
+# Sobe na árvore de diretórios até encontrar a pasta raiz do projeto ('Challenge_ClickBus')
+# Ele faz isso procurando por um arquivo/pasta que sempre existe na raiz, como o '.gitignore'
+project_root = notebook_path
+while not os.path.exists(os.path.join(project_root, '.gitignore')):
+    project_root = os.path.dirname(project_root)
+    if project_root == os.path.dirname(project_root): # Evita loop infinito
+        raise FileNotFoundError("Não foi possível encontrar a raiz do projeto. Verifique se o arquivo '.gitignore' existe.")
+
+
+# Constrói o caminho para a pasta de dados a partir da raiz
+WEBHOOK = os.path.join(project_root,'Desafios', 'data', 'webhook') + '/'
+
+print(f"Pasta de dados encontrada em: {WEBHOOK}")
+
+ARQUIVO_CSV_ATUAL = f'{WEBHOOK}cluster.csv'
+ARQUIVO_JSON_ANTIGO = f'{WEBHOOK}cluster_antigo.json'
 
 def carregar_clusters():
     df_hoje = pd.read_csv(ARQUIVO_CSV_ATUAL)
