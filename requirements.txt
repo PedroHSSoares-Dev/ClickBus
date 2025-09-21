@@ -1,5 +1,11 @@
-pandas
-numpy
-scikit-learn
-python-dotenv
+flask
+google-cloud-storage
+google-cloud-tasks
+joblib
 lightgbm
+numpy
+pandas
+python-dotenv
+requests
+scikit-learn==1.3.2
+xgboost==2.0.3
