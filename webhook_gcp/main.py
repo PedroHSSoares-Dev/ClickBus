@@ -4,7 +4,6 @@ import logging
 import requests
 import pandas as pd
 from google.cloud import storage
-from flask import Response
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -15,9 +14,8 @@ GCS_BUCKET_NAME = os.environ.get('GCS_BUCKET_NAME', 'dados-clickbus-pedrohs')
 storage_client = storage.Client()
 
 # ==============================================================================
-# SEÇÃO 0: HELPERS
+# SEÇÃO 0: HELPER
 # ==============================================================================
-
 def baixar_csv_do_gcs(bucket_name, file_name):
     """Baixa um CSV do GCS e o carrega para um DataFrame."""
     try:
@@ -33,17 +31,18 @@ def baixar_csv_do_gcs(bucket_name, file_name):
         return None
 
 # ==============================================================================
-# SEÇÃO 1: LÓGICA DAS FUNCIONALIDADES
+# SEÇÃO 1: LÓGICA PRINCIPAL
 # ==============================================================================
 
-def gerar_relatorio_movimentacao():
-    """Gera o relatório diário de migração de clientes."""
+def gerar_e_enviar_relatorio_consolidado():
+    """Gera um único relatório consolidado e o envia para o Slack."""
+    
+    # --- Parte 1: A Manchete (Análise de Migração) ---
     df_hoje = baixar_csv_do_gcs(GCS_BUCKET_NAME, 'cliente.csv')
     df_ontem = baixar_csv_do_gcs(GCS_BUCKET_NAME, 'cliente_antigo.csv')
 
-    if df_hoje is None or df_ontem is None:
-        texto_migracao = "ERRO: Não foi possível carregar os arquivos de clientes para comparação."
-    else:
+    texto_migracao = "Nenhuma migração de clientes entre clusters foi detectada hoje."
+    if df_hoje is not None and df_ontem is not None:
         df_migracao = pd.merge(df_ontem[['fk_contact', 'grupo']], df_hoje[['fk_contact', 'grupo']], on='fk_contact', suffixes=('_ontem', '_hoje'))
         migrados = df_migracao[df_migracao['grupo_ontem'] != df_migracao['grupo_hoje']]
         if not migrados.empty:
@@ -51,83 +50,45 @@ def gerar_relatorio_movimentacao():
             texto_migracao = "Principais movimentações de hoje:\n"
             for _, row in contagem.head(5).iterrows():
                 texto_migracao += f"➡️ {row['qtd']} clientes moveram de '{row['grupo_ontem']}' para '{row['grupo_hoje']}'\n"
-        else:
-            texto_migracao = "Nenhuma migração de clientes entre clusters foi detectada hoje."
         # Atualiza o arquivo antigo para o próximo dia
         storage_client.bucket(GCS_BUCKET_NAME).copy_blob(storage_client.bucket(GCS_BUCKET_NAME).blob('cliente.csv'), storage_client.bucket(GCS_BUCKET_NAME), 'cliente_antigo.csv')
-
-    mensagem = {
-        "blocks": [
-            {"type": "header", "text": {"type": "plain_text", "text": "📈 Relatório Diário de Movimentação"}},
-            {"type": "section", "text": {"type": "mrkdwn", "text": texto_migracao}},
-            {"type": "divider"},
-            {"type": "section", "text": {"type": "mrkdwn", "text": "Para mais informações, consulte os detalhes do cluster:"}},
-            {"type": "actions", "elements": [
-                {"type": "button", "text": {"type": "plain_text", "text": "📊 Ver Detalhes dos Clusters"}, "action_id": "btn_detalhes_cluster", "style": "primary"}
-            ]}
-        ]
-    }
-    requests.post(SLACK_WEBHOOK_URL, json=mensagem)
-
-def mostrar_detalhes_cluster():
-    """Busca os detalhes dos clusters e formata a resposta."""
+    
+    # --- Parte 2: O Raio-X (Detalhes dos Clusters) ---
     df_cluster = baixar_csv_do_gcs(GCS_BUCKET_NAME, 'cluster.csv')
-    blocks = [{"type": "header", "text": {"type": "plain_text", "text": "🔍 Detalhes dos Clusters de Clientes"}}]
-
+    blocos_detalhes = []
     if df_cluster is not None:
         for _, row in df_cluster.iterrows():
             texto_cluster = (f"*{row['cluster']}* ({row['Qtd']} clientes)\n"
-                             f"> Recência Média: `{round(row['recency_mean'])} dias` | "
-                             f"Frequência Média: `{round(row['frequency_mean'])}` | "
-                             f"Gasto Médio: `R$ {row['monetary_mean']:.2f}`")
-            blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": texto_cluster}})
-    else:
-        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": "Desculpe, não consegui encontrar o arquivo de resumo dos clusters (`cluster.csv`)."}})
-    
-    # Adiciona um botão para voltar ao relatório inicial
-    blocks.append({"type": "actions", "elements": [
-        {"type": "button", "text": {"type": "plain_text", "text": "🏠 Voltar ao Relatório Principal"}, "action_id": "btn_home"}
-    ]})
-    return {"replace_original": True, "blocks": blocks}
+                             f"> Recência: `{round(row['recency_mean'])}d` | Frequência: `{round(row['frequency_mean'])}` | Gasto: `R$ {row['monetary_mean']:.2f}`")
+            blocos_detalhes.append({"type": "section", "text": {"type": "mrkdwn", "text": texto_cluster}})
+
+    # --- Montagem da Mensagem Final ---
+    mensagem = {
+        "blocks": [
+            {"type": "header", "text": {"type": "plain_text", "text": "📈 Relatório Diário de Análise de Growth"}},
+            {"type": "section", "text": {"type": "mrkdwn", "text": texto_migracao}},
+            {"type": "divider"},
+            {"type": "header", "text": {"type": "plain_text", "text": "🔍 Raio-X dos Clusters Atuais"}},
+            *blocos_detalhes # O '*' desempacota a nossa lista de blocos aqui
+        ]
+    }
+
+    # --- Envio para o Slack ---
+    try:
+        resp = requests.post(SLACK_WEBHOOK_URL, json=mensagem, timeout=10)
+        logger.info(f"Resposta do Slack: Status={resp.status_code}, Corpo={resp.text}")
+    except Exception as e:
+        logger.exception(f"Erro ao tentar enviar a mensagem para o Slack: {e}")
 
 # ==============================================================================
-# SEÇÃO 2: ENTRYPOINT (O "Porteiro")
+# SEÇÃO 2: ENTRYPOINT (O "Porteiro" Simplificado)
 # ==============================================================================
 
 def clickbus_webhook(request):
-    """Entrypoint: GET para o relatório, POST para interações."""
-    try:
-        # Chamada do Agendador ou teste manual
-        if request.method == 'GET':
-            logger.info("Requisição GET recebida, gerando relatório diário...")
-            gerar_relatorio_movimentacao()
-            return Response("Relatório diário acionado.", status=200)
-
-        # Interação vinda do Slack (clique em botão)
-        elif request.method == 'POST':
-            payload = json.loads(request.form.get('payload'))
-            action_id = payload['actions'][0]['action_id']
-            response_url = payload.get('response_url')
-            
-            logger.info(f"Interação recebida: {action_id}")
-            
-            resposta_final = None
-            if action_id == 'btn_detalhes_cluster':
-                resposta_final = mostrar_detalhes_cluster()
-            elif action_id == 'btn_home':
-                # Ao clicar em "Voltar", simplesmente reenviamos o relatório principal
-                gerar_relatorio_movimentacao()
-                # E apagamos a mensagem anterior para não poluir o canal
-                requests.post(response_url, json={"delete_original": True})
-                return Response(status=200) # Apenas confirmamos o recebimento
-
-            if resposta_final:
-                requests.post(response_url, json=resposta_final)
-
-            return Response(status=200) # Sempre confirma o recebimento para o Slack
-
-    except Exception as e:
-        logger.exception(f"Erro inesperado no handler: {e}")
-        return Response("Erro interno no servidor.", status=500)
-
-    return Response("Método não permitido.", status=405)
+    """Entrypoint: Recebe a chamada do agendador e executa o relatório consolidado."""
+    if request.method == 'GET':
+        logger.info("Requisição GET recebida, gerando relatório consolidado...")
+        gerar_e_enviar_relatorio_consolidado()
+        return ("Relatório consolidado acionado.", 200)
+    
+    return ("Método não permitido.", 405)
